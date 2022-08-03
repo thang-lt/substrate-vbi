@@ -92,61 +92,51 @@ pub mod pallet {
 	pub(super) type KittiesOwned<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, BoundedVec<T::Hash, T::Max>, ValueQuery>;
 
 	#[pallet::genesis_config]
-	pub struct GenesisConfig{
-		pub genesis_value: Vec<u8>;,
+	pub struct GenesisConfig<T:Config>{
+		pub genesis_value: Vec<(T::AccountId, Vec<u8>)>,
 	}
 
 	#[cfg(feature = "std")]
-	impl Default for GenesisConfig{
-		fn default() -> GenesisConfig {
+	impl <T:Config> Default for GenesisConfig<T>{
+		fn default() -> GenesisConfig<T> {
 			GenesisConfig {
-				genesis_value : Vec<u8>,
+				genesis_value : Vec::default(),
 			}
 		}
 	}
 
 	#[pallet::genesis_build]
-	impl<T:Config> GenesisBuild<T> for GenesisConfig{
-
-		fn gen_gender(dna: &Vec<u8>) -> Result<Gender,Error<T>>{
-			let mut res = Gender::Female;
-			if dna.len() % 2 ==0 {
-				res = Gender::Male;
-			}
-			Ok(res)
-		}
-	
-		fn gen_dna() -> T::Hash {
-			let (seed,_) = T::KittyRandom::random_seed();
-			let block_number = <frame_system::Pallet<T>>::block_number();
-			T::Hashing::hash_of(&(seed, block_number))
-		}
+	impl<T:Config> GenesisBuild<T> for GenesisConfig<T>{
 
 		fn build(&self) {
-			let dna = self.genesis_value;
+			
+			for (owner, dna) in self.genesis_value.iter(){
+				log::info!("___owner:{:?}", owner);
+				log::info!("___đna:{:?}", dna);
+				
+				log::info!("___total balance:{:?}", T::Currency::total_balance(&owner));
+				let gender = Pallet::<T>::gen_gender(&dna).unwrap();
+				log::info!("___gender:{:?}", gender);
+				let dna = Pallet::<T>::gen_dna();
+				log::info!("___dna:{:?}", dna);
+				let now = pallet_timestamp::Pallet::<T>::now();
+				let kitty = Kitty::<T> { dna: dna.clone(), price: 0u32.into(), gender, owner: owner.clone(), create: now };
+				log::info!("___New Kitty:{:?}", kitty);
 
-			Something::<T>::put(self.genesis_value)
-			// dffdff
+				// Performs this operation first as it may fail
+				let current_id = KittyId::<T>::get();
+				let next_id = current_id.checked_add(1);
+				log::info!("___next_id:{:?}", next_id);
 
-			let owner = ensure_signed(origin)?;
-			Self::gen_dna();
-			log::info!("___total balance:{:?}", T::Currency::total_balance(&owner));
-			let gender = Self::gen_gender(&dna)?;
-			let dna = Self::gen_dna();
-			let now = pallet_timestamp::Pallet::<T>::now();
-			let kitty = Kitty::<T> { dna: dna.clone(), price: 0u32.into(), gender, owner: owner.clone(), create: now };
-			log::info!("___New Kitty:{:?}", kitty);
+				// Append kitty to KittiesOwned
+				KittiesOwned::<T>::try_append(&owner, kitty.dna.clone());
 
-			// Performs this operation first as it may fail
-			let current_id = KittyId::<T>::get();
-			let next_id = current_id.checked_add(1).ok_or(ArithmeticError::Overflow)?;
+				// Write new kitty to storage
+				Kitties::<T>::insert(kitty.dna.clone(), kitty);
+				// KittyId::<T>::put(next_id);
 
-			// Append kitty to KittiesOwned
-			KittiesOwned::<T>::try_append(&owner, kitty.dna.clone()).map_err(|_| Error::<T>::NoKitty)?;
 
-			// Write new kitty to storage
-			Kitties::<T>::insert(kitty.dna.clone(), kitty);
-			KittyId::<T>::put(next_id);
+			}
 		}
 	} 
 
@@ -275,8 +265,11 @@ impl<T:Config> Pallet<T> {
 	}
 
 	fn gen_dna() -> T::Hash {
+		log::info!("___ vào Gen_dna");
 		let (seed,_) = T::KittyRandom::random_seed();
+		log::info!("___ step1");
 		let block_number = <frame_system::Pallet<T>>::block_number();
+		log::info!("___ step2");
 		T::Hashing::hash_of(&(seed, block_number))
 	}
 }
